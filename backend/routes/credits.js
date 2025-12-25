@@ -89,10 +89,10 @@ router.get('/buyer-summary', authenticateToken, (req, res) => {
     `SELECT 
        COUNT(*) as totalCredits,
        SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as pendingAmount,
-       SUM(CASE WHEN status = 'verified' THEN amount ELSE 0 END) as verifiedAmount,
-       SUM(CASE WHEN status = 'late' THEN amount ELSE 0 END) as overdueAmount,
+       SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END) as activeAmount,
+       SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END) as overdueAmount,
        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as paidAmount,
-       COUNT(CASE WHEN status = 'late' THEN 1 END) as overdueCount
+       SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdueCount
      FROM credits
      WHERE buyerId = ?`,
     [userId],
@@ -100,7 +100,7 @@ router.get('/buyer-summary', authenticateToken, (req, res) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json(row || { totalCredits: 0, pendingAmount: 0, verifiedAmount: 0, overdueAmount: 0, paidAmount: 0, overdueCount: 0 });
+      res.json(row || { totalCredits: 0, pendingAmount: 0, activeAmount: 0, overdueAmount: 0, paidAmount: 0, overdueCount: 0 });
     }
   );
 });
@@ -114,10 +114,10 @@ router.get('/seller-summary', authenticateToken, (req, res) => {
     `SELECT 
        COUNT(*) as totalCredits,
        SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as pendingAmount,
-       SUM(CASE WHEN status = 'verified' THEN amount ELSE 0 END) as verifiedAmount,
-       SUM(CASE WHEN status = 'late' THEN amount ELSE 0 END) as overdueAmount,
+       SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END) as activeAmount,
+       SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END) as overdueAmount,
        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as paidAmount,
-       COUNT(CASE WHEN status = 'late' THEN 1 END) as overdueCount,
+       SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdueCount,
        COUNT(DISTINCT buyerId) as uniqueBuyers
      FROM credits
      WHERE sellerId = ?`,
@@ -126,7 +126,7 @@ router.get('/seller-summary', authenticateToken, (req, res) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json(row || { totalCredits: 0, pendingAmount: 0, verifiedAmount: 0, overdueAmount: 0, paidAmount: 0, overdueCount: 0, uniqueBuyers: 0 });
+      res.json(row || { totalCredits: 0, pendingAmount: 0, activeAmount: 0, overdueAmount: 0, paidAmount: 0, overdueCount: 0, uniqueBuyers: 0 });
     }
   );
 });
@@ -225,7 +225,7 @@ router.put('/:creditId/status', authenticateToken, (req, res) => {
   const { creditId } = req.params;
   const { status, paymentMethod, paymentReference, notes } = req.body;
 
-  const validStatuses = ['pending', 'verified', 'paid', 'overdue', 'late'];
+  const validStatuses = ['pending', 'approved', 'rejected', 'active', 'paid', 'overdue', 'late'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
@@ -319,6 +319,220 @@ router.delete('/:creditId', authenticateToken, (req, res) => {
     }
     res.json({ message: 'Credit deleted successfully' });
   });
+});
+
+// Search buyer by phone number
+router.get('/buyer-by-phone/:phoneNumber', authenticateToken, (req, res) => {
+  const db = getDatabase();
+  const { phoneNumber } = req.params;
+
+  // First, get buyer basic info
+  db.get(
+    `SELECT 
+       u.id,
+       u.phoneNumber,
+       b.name,
+       b.municipality,
+       b.wardNumber
+     FROM users u
+     JOIN buyers b ON u.id = b.userId
+     WHERE u.phoneNumber = ? AND u.role = 'buyer'`,
+    [phoneNumber],
+    (err, buyer) => {
+      if (err) {
+        console.error('buyer-by-phone query error:', err);
+        return res.status(500).json({ error: 'Database error', details: err.message });
+      }
+      
+      if (!buyer) {
+        return res.status(404).json({ error: 'Buyer not found' });
+      }
+
+      // Now calculate credit score based on payment history
+      db.all(
+        `SELECT status FROM credits WHERE buyerId = ?`,
+        [buyer.id],
+        (err, credits) => {
+          if (err) {
+            console.error('credit score calculation error:', err);
+            // Return buyer with default score if credit history query fails
+            return res.json({ ...buyer, creditScore: 50 });
+          }
+
+          // Calculate credit score
+          let score = 50; // Base score
+          const totalCredits = credits.length;
+
+          if (totalCredits > 0) {
+            const paidCount = credits.filter(c => c.status === 'PAID').length;
+            const overdueCount = credits.filter(c => c.status === 'OVERDUE').length;
+            const activeCount = credits.filter(c => c.status === 'ACTIVE').length;
+
+            // Scoring logic: paid credits increase score, overdue decrease it
+            score += (paidCount * 10); // +10 per paid credit
+            score -= (overdueCount * 15); // -15 per overdue credit
+            score -= (activeCount * 2); // -2 per active credit (slight risk)
+
+            // Clamp score between 0 and 100
+            score = Math.max(0, Math.min(100, score));
+          }
+
+          res.json({ ...buyer, creditScore: Math.round(score) });
+        }
+      );
+    }
+  );
+});
+
+// Get buyer's credit history for verification
+router.get('/buyer-history/:buyerId', authenticateToken, (req, res) => {
+  const db = getDatabase();
+  const { buyerId } = req.params;
+
+  db.all(
+    `SELECT 
+       c.*,
+       s.name as sellerName,
+       s.shopName
+     FROM credits c
+     LEFT JOIN sellers s ON c.sellerId = s.userId
+     WHERE c.buyerId = ?
+     ORDER BY c.createdAt DESC`,
+    [buyerId],
+    (err, history) => {
+      if (err) {
+        console.error('buyer-history query error:', err);
+        return res.status(500).json({ error: 'Database error', details: err.message });
+      }
+      
+      res.json(history || []);
+    }
+  );
+});
+
+// Get pending credit requests for buyer (notifications)
+router.get('/pending-requests', authenticateToken, (req, res) => {
+  const db = getDatabase();
+  const userId = req.userId;
+
+  db.all(
+    `SELECT 
+       c.*,
+       s.name as sellerName,
+       s.shopName,
+       b.name as buyerName
+     FROM credits c
+     LEFT JOIN sellers s ON c.sellerId = s.userId
+     LEFT JOIN buyers b ON c.buyerId = b.userId
+     WHERE c.buyerId = ? AND c.status = 'pending' AND c.buyerApproved = 0
+     ORDER BY c.createdAt DESC`,
+    [userId],
+    (err, requests) => {
+      if (err) {
+        console.error('pending-requests query error:', err);
+        return res.status(500).json({ error: 'Database error', details: err.message });
+      }
+      
+      res.json(requests || []);
+    }
+  );
+});
+
+// Approve credit request (buyer confirms)
+router.post('/:creditId/approve', authenticateToken, (req, res) => {
+  const db = getDatabase();
+  const { creditId } = req.params;
+  const userId = req.userId;
+  const now = new Date().toISOString();
+
+  // First verify this credit belongs to the buyer
+  db.get(
+    'SELECT * FROM credits WHERE id = ? AND buyerId = ?',
+    [creditId, userId],
+    (err, credit) => {
+      if (err) {
+        console.error('approve credit query error:', err);
+        return res.status(500).json({ error: 'Database error', details: err.message });
+      }
+
+      if (!credit) {
+        return res.status(404).json({ error: 'Credit request not found or unauthorized' });
+      }
+
+      if (credit.status !== 'pending') {
+        return res.status(400).json({ error: 'Credit request is not pending' });
+      }
+
+      // Update credit to approved and active
+      db.run(
+        `UPDATE credits 
+         SET status = 'active', buyerApproved = 1, updatedAt = ?
+         WHERE id = ?`,
+        [now, creditId],
+        function(err) {
+          if (err) {
+            console.error('approve credit update error:', err);
+            return res.status(500).json({ error: 'Database error', details: err.message });
+          }
+
+          res.json({ 
+            message: 'Credit request approved',
+            creditId,
+            status: 'active'
+          });
+        }
+      );
+    }
+  );
+});
+
+// Reject credit request (buyer denies)
+router.post('/:creditId/reject', authenticateToken, (req, res) => {
+  const db = getDatabase();
+  const { creditId } = req.params;
+  const userId = req.userId;
+  const { reason } = req.body;
+  const now = new Date().toISOString();
+
+  // First verify this credit belongs to the buyer
+  db.get(
+    'SELECT * FROM credits WHERE id = ? AND buyerId = ?',
+    [creditId, userId],
+    (err, credit) => {
+      if (err) {
+        console.error('reject credit query error:', err);
+        return res.status(500).json({ error: 'Database error', details: err.message });
+      }
+
+      if (!credit) {
+        return res.status(404).json({ error: 'Credit request not found or unauthorized' });
+      }
+
+      if (credit.status !== 'pending') {
+        return res.status(400).json({ error: 'Credit request is not pending' });
+      }
+
+      // Update credit to rejected
+      db.run(
+        `UPDATE credits 
+         SET status = 'rejected', buyerApproved = 0, notes = ?, updatedAt = ?
+         WHERE id = ?`,
+        [reason || 'Rejected by buyer', now, creditId],
+        function(err) {
+          if (err) {
+            console.error('reject credit update error:', err);
+            return res.status(500).json({ error: 'Database error', details: err.message });
+          }
+
+          res.json({ 
+            message: 'Credit request rejected',
+            creditId,
+            status: 'rejected'
+          });
+        }
+      );
+    }
+  );
 });
 
 export default router;

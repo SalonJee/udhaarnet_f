@@ -3,42 +3,36 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacit
 import { useAuth } from '../context/AuthContext';
 import { calculateCreditScore, getRiskLevel } from '../utils/creditScore';
 
-const API_URL = 'http://192.168.8.121:3000/api';
+const API_URL = 'http://10.209.203.203:3000/api';
 
 const BuyerHomeScreen = ({ navigation }) => {
   const { user, logout, token } = useAuth();
-  const [products, setProducts] = useState([]);
   const [credits, setCredits] = useState([]);
   const [creditSummary, setCreditSummary] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('products'); // 'products' or 'credits'
 
   useEffect(() => {
     fetchData();
+    // Poll for pending requests every 30 seconds
+    const interval = setInterval(() => {
+      fetchPendingRequests();
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      await Promise.all([fetchProducts(), fetchCredits(), fetchCreditSummary()]);
+      await Promise.all([fetchCredits(), fetchCreditSummary(), fetchPendingRequests()]);
       setError(null);
     } catch (err) {
       setError(err.message);
       Alert.alert('Error', 'Failed to fetch data: ' + err.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch(`${API_URL}/products`);
-      if (!response.ok) throw new Error('Failed to fetch products');
-      const data = await response.json();
-      setProducts(data);
-    } catch (err) {
-      console.error('Product fetch error:', err);
     }
   };
 
@@ -70,16 +64,92 @@ const BuyerHomeScreen = ({ navigation }) => {
     }
   };
 
-  const handleAddToCart = (product) => {
-    Alert.alert('Added to Cart', `${product.name} added to cart!`);
+  const fetchPendingRequests = async () => {
+    try {
+      const response = await fetch(`${API_URL}/credits/pending-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const previousCount = pendingRequests.length;
+        setPendingRequests(data);
+        
+        // Auto-show notifications if there are new pending requests
+        if (data.length > 0 && data.length > previousCount) {
+          setShowNotifications(true);
+        }
+      }
+    } catch (err) {
+      console.error('Pending requests fetch error:', err);
+    }
+  };
+
+  const handleApproveCredit = async (creditId) => {
+    try {
+      const response = await fetch(`${API_URL}/credits/${creditId}/approve`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        Alert.alert('Success', 'Credit request approved successfully');
+        fetchPendingRequests();
+        fetchCredits();
+        fetchCreditSummary();
+        setShowNotifications(false);
+      } else {
+        const data = await response.json();
+        Alert.alert('Error', data.error || 'Failed to approve credit');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to approve credit: ' + err.message);
+    }
+  };
+
+  const handleRejectCredit = async (creditId) => {
+    Alert.alert(
+      'Reject Credit Request',
+      'Are you sure you want to reject this credit request?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_URL}/credits/${creditId}/reject`, {
+                method: 'POST',
+                headers: { 
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ reason: 'Rejected by buyer' })
+              });
+
+              if (response.ok) {
+                Alert.alert('Success', 'Credit request rejected');
+                fetchPendingRequests();
+                setShowNotifications(false);
+              } else {
+                const data = await response.json();
+                Alert.alert('Error', data.error || 'Failed to reject credit');
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Failed to reject credit: ' + err.message);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleLogout = () => {
     logout();
     navigation.navigate('RoleSelection');
   };
-
-  const categories = [...new Set(products.map(p => p.category))];
 
   return (
     <ScrollView style={styles.container}>
@@ -88,105 +158,98 @@ const BuyerHomeScreen = ({ navigation }) => {
           <Text style={styles.greeting}>Welcome, Buyer!</Text>
           <Text style={styles.email}>{user?.email}</Text>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.notificationButton} 
+            onPress={() => setShowNotifications(!showNotifications)}
+          >
+            <Text style={styles.notificationIcon}>🔔</Text>
+            {pendingRequests.length > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{pendingRequests.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'products' && styles.activeTab]}
-          onPress={() => setActiveTab('products')}
-        >
-          <Text style={[styles.tabText, activeTab === 'products' && styles.activeTabText]}>📦 Products</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'credits' && styles.activeTab]}
-          onPress={() => setActiveTab('credits')}
-        >
-          <Text style={[styles.tabText, activeTab === 'credits' && styles.activeTabText]}>💳 My Credits</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Notifications Dropdown */}
+      {showNotifications && (
+        <View style={styles.notificationsPanel}>
+          <View style={styles.notificationsPanelHeader}>
+            <Text style={styles.notificationsPanelTitle}>Credit Requests</Text>
+            <TouchableOpacity onPress={() => setShowNotifications(false)}>
+              <Text style={styles.closeButton}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {pendingRequests.length === 0 ? (
+            <View style={styles.emptyNotifications}>
+              <Text style={styles.emptyNotificationsText}>No pending requests</Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.notificationsList}>
+              {pendingRequests.map((request) => (
+                <View key={request.id} style={styles.notificationItem}>
+                  <View style={styles.notificationHeader}>
+                    <Text style={styles.notificationShopName}>{request.shopName || 'Shop'}</Text>
+                    <Text style={styles.notificationTime}>
+                      {new Date(request.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  
+                  <Text style={styles.notificationSellerName}>
+                    From: {request.sellerName}
+                  </Text>
+                  
+                  <Text style={styles.notificationDescription}>
+                    {request.description}
+                  </Text>
+                  
+                  <Text style={styles.notificationAmount}>
+                    Amount: Rs. {request.amount.toFixed(2)}
+                  </Text>
+                  
+                  {request.dueDate && (
+                    <Text style={styles.notificationDueDate}>
+                      Due: {new Date(request.dueDate).toLocaleDateString()}
+                    </Text>
+                  )}
+                  
+                  <View style={styles.notificationActions}>
+                    <TouchableOpacity
+                      style={[styles.notificationButton, styles.approveButton]}
+                      onPress={() => handleApproveCredit(request.id)}
+                    >
+                      <Text style={styles.notificationButtonText}>✓ Approve</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.notificationButton, styles.rejectButton]}
+                      onPress={() => handleRejectCredit(request.id)}
+                    >
+                      <Text style={styles.notificationButtonText}>✕ Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
-      ) : activeTab === 'products' ? (
-        renderProductsTab()
       ) : (
         renderCreditsTab()
       )}
     </ScrollView>
   );
-
-  function renderProductsTab() {
-    return (
-      <>
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchPlaceholder}>🔍 Search products...</Text>
-        </View>
-
-        {categories.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Categories</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.categoryRow}>
-                {categories.map((category, idx) => (
-                  <View key={idx} style={styles.categoryCard}>
-                    <Text style={styles.categoryIcon}>📦</Text>
-                    <Text style={styles.categoryName}>{category}</Text>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Products</Text>
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>Error: {error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : products.length === 0 ? (
-            <Text style={styles.emptyText}>No products available</Text>
-          ) : (
-            products.map((product) => (
-              <View key={product.id} style={styles.productCard}>
-                <View style={styles.productImage}>
-                  <Text style={styles.productImageText}>📦</Text>
-                </View>
-                <View style={styles.productInfo}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.productCategory}>{product.category}</Text>
-                  <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
-                  <Text style={styles.productStock}>Stock: {product.stock}</Text>
-                </View>
-                <TouchableOpacity 
-                  style={styles.addToCartBtn}
-                  onPress={() => handleAddToCart(product)}
-                  disabled={product.stock === 0}
-                >
-                  <Text style={styles.addToCartText}>{product.stock > 0 ? 'Add' : 'Out'}</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Browse our collection...</Text>
-        </View>
-      </>
-    );
-  }
 
   function renderCreditsTab() {
     if (!creditSummary) {
@@ -203,7 +266,7 @@ const BuyerHomeScreen = ({ navigation }) => {
         <View style={styles.summaryGrid}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total Outstanding</Text>
-            <Text style={styles.summaryValue}>${(creditSummary.verifiedAmount + creditSummary.pendingAmount).toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>${(creditSummary.activeAmount + creditSummary.pendingAmount).toFixed(2)}</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Overdue</Text>
@@ -300,6 +363,140 @@ const styles = StyleSheet.create({
     color: '#e0e0e0',
     marginTop: 5,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  notificationButton: {
+    position: 'relative',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  notificationIcon: {
+    fontSize: 20,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#ff3b30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  notificationsPanel: {
+    backgroundColor: '#fff',
+    margin: 15,
+    borderRadius: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    maxHeight: 500,
+  },
+  notificationsPanelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  notificationsPanelTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+  },
+  closeButton: {
+    fontSize: 24,
+    color: '#999',
+    fontWeight: '300',
+  },
+  emptyNotifications: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyNotificationsText: {
+    color: '#999',
+    fontSize: 14,
+  },
+  notificationsList: {
+    maxHeight: 400,
+  },
+  notificationItem: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  notificationShopName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  notificationTime: {
+    fontSize: 11,
+    color: '#999',
+  },
+  notificationSellerName: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 5,
+  },
+  notificationDescription: {
+    fontSize: 14,
+    color: '#1a1a1a',
+    marginBottom: 8,
+  },
+  notificationAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#d9534f',
+    marginBottom: 5,
+  },
+  notificationDueDate: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 10,
+  },
+  notificationActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  notificationButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  approveButton: {
+    backgroundColor: '#5cb85c',
+  },
+  rejectButton: {
+    backgroundColor: '#d9534f',
+  },
+  notificationButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   logoutButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 15,
@@ -310,43 +507,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 15,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: '#007AFF',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#999',
-  },
-  activeTabText: {
-    color: '#007AFF',
-  },
-  searchContainer: {
-    backgroundColor: '#fff',
-    margin: 15,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  searchPlaceholder: {
-    color: '#999',
-    fontSize: 14,
   },
   section: {
     paddingHorizontal: 15,
@@ -361,93 +521,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1a1a1a',
     marginBottom: 12,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  categoryCard: {
-    backgroundColor: '#fff',
-    paddingVertical: 15,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    minWidth: 80,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  categoryIcon: {
-    fontSize: 28,
-    marginBottom: 8,
-  },
-  categoryName: {
-    fontSize: 12,
-    color: '#1a1a1a',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  productCard: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  productImage: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  productImageText: {
-    fontSize: 40,
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 5,
-  },
-  productCategory: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 5,
-  },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 3,
-  },
-  productStock: {
-    fontSize: 11,
-    color: '#666',
-  },
-  addToCartBtn: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  addToCartText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
   },
   summaryGrid: {
     flexDirection: 'row',
@@ -551,21 +624,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  errorText: {
-    color: '#c33',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  retryButton: {
-    backgroundColor: '#c33',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  retryText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
   emptyText: {
     textAlign: 'center',
     color: '#999',
@@ -579,14 +637,6 @@ const styles = StyleSheet.create({
   emptyStateText: {
     color: '#999',
     fontSize: 16,
-  },
-  footer: {
-    paddingVertical: 30,
-    alignItems: 'center',
-  },
-  footerText: {
-    color: '#999',
-    fontSize: 14,
   },
 });
 

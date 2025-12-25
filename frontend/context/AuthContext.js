@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext();
-const API_URL = 'http://192.168.8.121:3000/api';
+const API_URL = 'http://10.209.203.203:3000/api';
 
 export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null);

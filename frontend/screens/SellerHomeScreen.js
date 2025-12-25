@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { calculateCreditScore, formatCreditScore, getRiskLevel } from '../utils/creditScore';
 
-const API_URL = 'http://192.168.8.121:3000/api';
+const API_URL = 'http://10.209.203.203:3000/api';
 
 const SellerHomeScreen = ({ navigation }) => {
   const { user, logout, token } = useAuth();
@@ -35,6 +35,10 @@ const SellerHomeScreen = ({ navigation }) => {
   const [addCreditModalVisible, setAddCreditModalVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [buyers, setBuyers] = useState([]);
+  const [phoneSearch, setPhoneSearch] = useState('');
+  const [searchedBuyer, setSearchedBuyer] = useState(null);
+  const [showBuyerDetails, setShowBuyerDetails] = useState(false);
+  const [buyerCreditHistory, setBuyerCreditHistory] = useState([]);
   const [newCreditForm, setNewCreditForm] = useState({
     buyerName: '',
     amount: '',
@@ -151,6 +155,10 @@ const SellerHomeScreen = ({ navigation }) => {
   };
 
   const openAddCreditModal = () => {
+    setPhoneSearch('');
+    setSearchedBuyer(null);
+    setShowBuyerDetails(false);
+    setBuyerCreditHistory([]);
     setNewCreditForm({
       buyerName: '',
       amount: '',
@@ -162,12 +170,94 @@ const SellerHomeScreen = ({ navigation }) => {
 
   const closeAddCreditModal = () => {
     setAddCreditModalVisible(false);
+    setPhoneSearch('');
+    setSearchedBuyer(null);
+    setShowBuyerDetails(false);
+    setBuyerCreditHistory([]);
     setNewCreditForm({
       buyerName: '',
       amount: '',
       description: '',
       dueDate: '',
     });
+  };
+
+  const searchBuyerByPhone = async () => {
+    if (!phoneSearch || phoneSearch.length < 10) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      
+      // Search for buyer by phone number
+      const response = await fetch(`${API_URL}/credits/buyer-by-phone/${phoneSearch}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          Alert.alert('Not Found', 'No buyer found with this phone number');
+        } else {
+          throw new Error('Failed to search buyer');
+        }
+        setSearchedBuyer(null);
+        setShowBuyerDetails(false);
+        return;
+      }
+
+      const buyer = await response.json();
+      setSearchedBuyer(buyer);
+      
+      // Fetch buyer's credit history
+      await fetchBuyerCreditHistory(buyer.id);
+      
+      setShowBuyerDetails(true);
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fetchBuyerCreditHistory = async (buyerId) => {
+    try {
+      const response = await fetch(`${API_URL}/credits/buyer-history/${buyerId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const history = await response.json();
+        setBuyerCreditHistory(history);
+      }
+    } catch (err) {
+      console.log('Failed to fetch buyer history:', err);
+    }
+  };
+
+  const handleGiveCredit = () => {
+    if (!searchedBuyer) return;
+    
+    // Pre-fill the form with buyer details
+    setNewCreditForm({
+      buyerName: searchedBuyer.name,
+      buyerId: searchedBuyer.id,
+      phoneNumber: searchedBuyer.phoneNumber,
+      municipality: searchedBuyer.municipality,
+      wardNumber: searchedBuyer.wardNumber,
+      amount: '',
+      description: '',
+      dueDate: '',
+    });
+    
+    setShowBuyerDetails(false);
   };
 
   const handleAddCredit = async () => {
@@ -190,18 +280,27 @@ const SellerHomeScreen = ({ navigation }) => {
     try {
       setSubmitting(true);
 
+      // Prepare request body - use buyerId if available from phone search
+      const requestBody = {
+        amount: parseFloat(newCreditForm.amount),
+        description: newCreditForm.description.trim(),
+        dueDate: newCreditForm.dueDate || null,
+      };
+
+      // If we have buyerId from phone search, use it; otherwise use buyerName
+      if (newCreditForm.buyerId) {
+        requestBody.buyerId = newCreditForm.buyerId;
+      } else {
+        requestBody.buyerName = newCreditForm.buyerName.trim();
+      }
+
       const response = await fetch(`${API_URL}/credits/create`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          buyerName: newCreditForm.buyerName.trim(),
-          amount: parseFloat(newCreditForm.amount),
-          description: newCreditForm.description.trim(),
-          dueDate: newCreditForm.dueDate || null,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -529,6 +628,7 @@ const SellerHomeScreen = ({ navigation }) => {
               <TextInput
                 style={styles.input}
                 placeholder="Enter reference number (optional)"
+                placeholderTextColor="#999"
                 value={paymentReference}
                 onChangeText={setPaymentReference}
               />
@@ -539,6 +639,7 @@ const SellerHomeScreen = ({ navigation }) => {
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="Enter notes (optional)"
+                placeholderTextColor="#999"
                 value={paymentNotes}
                 onChangeText={setPaymentNotes}
                 multiline
@@ -570,101 +671,225 @@ const SellerHomeScreen = ({ navigation }) => {
             <Text style={styles.modalTitle}>Add New Credit</Text>
 
             <ScrollView>
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Select Buyer *</Text>
-                <View style={styles.pickerContainer}>
-                  {buyers.length > 0 ? (
-                    buyers.map((buyer) => (
-                      <TouchableOpacity
-                        key={buyer.id}
-                        style={[
-                          styles.pickerOption,
-                          newCreditForm.buyerName === buyer.name && styles.pickerOptionSelected,
-                        ]}
-                        onPress={() => setNewCreditForm({ ...newCreditForm, buyerName: buyer.name })}
-                        disabled={submitting}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            newCreditForm.buyerName === buyer.name && styles.pickerOptionTextSelected,
-                          ]}
-                        >
-                          {buyer.name}
+              {!showBuyerDetails && !searchedBuyer ? (
+                // Step 1: Phone Search
+                <>
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Customer Phone Number *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter 10-digit phone number"
+                      placeholderTextColor="#999"
+                      keyboardType="phone-pad"
+                      value={phoneSearch}
+                      onChangeText={setPhoneSearch}
+                      maxLength={10}
+                      editable={!submitting}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnPrimary, { marginVertical: 16 }]}
+                    onPress={searchBuyerByPhone}
+                    disabled={submitting || phoneSearch.length < 10}
+                  >
+                    <Text style={styles.btnText}>
+                      {submitting ? 'Searching...' : 'Search Customer'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.helperText}>
+                    Enter the customer's phone number to view their credit profile
+                  </Text>
+                </>
+              ) : showBuyerDetails && searchedBuyer ? (
+                // Step 2: Buyer Details & Approval
+                <>
+                  <View style={styles.buyerDetailsCard}>
+                    <Text style={styles.buyerDetailsTitle}>Customer Details</Text>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Name:</Text>
+                      <Text style={styles.detailValue}>{searchedBuyer.name}</Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Phone:</Text>
+                      <Text style={styles.detailValue}>{searchedBuyer.phoneNumber}</Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Location:</Text>
+                      <Text style={styles.detailValue}>
+                        {searchedBuyer.municipality}, Ward {searchedBuyer.wardNumber}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Credit Score:</Text>
+                      <View style={styles.creditScoreContainer}>
+                        <Text style={[
+                          styles.creditScoreText,
+                          searchedBuyer.creditScore >= 70 ? styles.scoreGood :
+                          searchedBuyer.creditScore >= 40 ? styles.scoreMedium :
+                          styles.scorePoor
+                        ]}>
+                          {searchedBuyer.creditScore || 50}%
                         </Text>
-                        <Text style={styles.pickerOptionSubtext}>
-                          {buyer.municipality}, Ward {buyer.wardNumber}
+                        <Text style={styles.riskLabel}>
+                          {searchedBuyer.creditScore >= 70 ? 'Low Risk' :
+                           searchedBuyer.creditScore >= 40 ? 'Medium Risk' :
+                           'High Risk'}
                         </Text>
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <Text style={styles.emptyStateText}>No buyers available</Text>
-                  )}
-                </View>
-              </View>
+                      </View>
+                    </View>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Amount (Rs.) *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter amount"
-                  keyboardType="decimal-pad"
-                  value={newCreditForm.amount}
-                  onChangeText={(text) =>
-                    setNewCreditForm({ ...newCreditForm, amount: text })
-                  }
-                  editable={!submitting}
-                />
-              </View>
+                    {buyerCreditHistory.length > 0 && (
+                      <View style={styles.creditHistorySection}>
+                        <Text style={styles.historyTitle}>Credit History:</Text>
+                        <Text style={styles.historyText}>
+                          Total Credits: {buyerCreditHistory.length}
+                        </Text>
+                        <Text style={styles.historyText}>
+                          Active: {buyerCreditHistory.filter(c => c.status === 'ACTIVE').length}
+                        </Text>
+                        <Text style={styles.historyText}>
+                          Paid: {buyerCreditHistory.filter(c => c.status === 'PAID').length}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Description *</Text>
-                <TextInput
-                  style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
-                  placeholder="Enter description"
-                  multiline
-                  value={newCreditForm.description}
-                  onChangeText={(text) =>
-                    setNewCreditForm({ ...newCreditForm, description: text })
-                  }
-                  editable={!submitting}
-                />
-              </View>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSuccess, { marginVertical: 16 }]}
+                    onPress={handleGiveCredit}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.btnText}>Give Credit</Text>
+                  </TouchableOpacity>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Due Date (Optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="YYYY-MM-DD"
-                  value={newCreditForm.dueDate}
-                  onChangeText={(text) =>
-                    setNewCreditForm({ ...newCreditForm, dueDate: text })
-                  }
-                  editable={!submitting}
-                />
-              </View>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary]}
+                    onPress={() => {
+                      setSearchedBuyer(null);
+                      setShowBuyerDetails(false);
+                      setPhoneSearch('');
+                    }}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.btnText}>Search Different Customer</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                // Step 3: Credit Form (after approval)
+                <>
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Customer Name</Text>
+                    <TextInput
+                      style={[styles.input, styles.inputReadonly]}
+                      value={newCreditForm.buyerName}
+                      editable={false}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Phone Number</Text>
+                    <TextInput
+                      style={[styles.input, styles.inputReadonly]}
+                      value={newCreditForm.phoneNumber}
+                      editable={false}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Location</Text>
+                    <TextInput
+                      style={[styles.input, styles.inputReadonly]}
+                      value={`${newCreditForm.municipality}, Ward ${newCreditForm.wardNumber}`}
+                      editable={false}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Amount (Rs.) *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter amount"
+                      placeholderTextColor="#999"
+                      keyboardType="decimal-pad"
+                      value={newCreditForm.amount}
+                      onChangeText={(text) =>
+                        setNewCreditForm({ ...newCreditForm, amount: text })
+                      }
+                      editable={!submitting}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Product Description *</Text>
+                    <TextInput
+                      style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                      placeholder="Enter product description"
+                      placeholderTextColor="#999"
+                      multiline
+                      value={newCreditForm.description}
+                      onChangeText={(text) =>
+                        setNewCreditForm({ ...newCreditForm, description: text })
+                      }
+                      editable={!submitting}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Due Date (Optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#999"
+                      value={newCreditForm.dueDate}
+                      onChangeText={(text) =>
+                        setNewCreditForm({ ...newCreditForm, dueDate: text })
+                      }
+                      editable={!submitting}
+                    />
+                  </View>
+
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.btn, styles.btnSecondary]}
+                      onPress={() => {
+                        setSearchedBuyer(searchedBuyer);
+                        setShowBuyerDetails(true);
+                      }}
+                      disabled={submitting}
+                    >
+                      <Text style={styles.btnText}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.btn, styles.btnPrimary]}
+                      onPress={handleAddCredit}
+                      disabled={submitting}
+                    >
+                      <Text style={styles.btnText}>
+                        {submitting ? 'Creating...' : 'Create Credit'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </ScrollView>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.btn, styles.btnSecondary]}
-                onPress={closeAddCreditModal}
-                disabled={submitting}
-              >
-                <Text style={styles.btnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.btn, styles.btnPrimary]}
-                onPress={handleAddCredit}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.btnText}>Add Credit</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            {(showBuyerDetails || !searchedBuyer) && (
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnSecondary]}
+                  onPress={closeAddCreditModal}
+                  disabled={submitting}
+                >
+                  <Text style={styles.btnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -979,6 +1204,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 12,
     backgroundColor: '#f9f9f9',
+    color: '#333',
   },
   textArea: {
     paddingVertical: 12,
@@ -995,6 +1221,94 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 15,
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  buyerDetailsCard: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 8,
+    marginVertical: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  buyerDetailsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    paddingBottom: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+  },
+  creditScoreContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  creditScoreText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  scoreGood: {
+    color: '#27ae60',
+  },
+  scoreMedium: {
+    color: '#f39c12',
+  },
+  scorePoor: {
+    color: '#e74c3c',
+  },
+  riskLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  creditHistorySection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
+  },
+  historyText: {
+    fontSize: 13,
+    color: '#555',
+    marginVertical: 2,
+  },
+  btnSuccess: {
+    backgroundColor: '#27ae60',
+  },
+  inputReadonly: {
+    backgroundColor: '#f0f0f0',
+    color: '#666',
   },
 });
 

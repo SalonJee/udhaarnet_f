@@ -101,6 +101,7 @@ const SignupScreen = ({ navigation }) => {
         <TextInput
           style={styles.input}
           placeholder="Phone Number"
+          placeholderTextColor="#666"
           value={phoneNumber}
           onChangeText={setPhoneNumber}
           keyboardType="phone-pad"
@@ -110,6 +111,7 @@ const SignupScreen = ({ navigation }) => {
         <TextInput
           style={styles.input}
           placeholder="Password"
+          placeholderTextColor="#666"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -119,6 +121,7 @@ const SignupScreen = ({ navigation }) => {
         <TextInput
           style={styles.input}
           placeholder="Confirm Password"
+          placeholderTextColor="#666"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           secureTextEntry
@@ -134,6 +137,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Full Name"
+            placeholderTextColor="#666"
             value={buyerName}
             onChangeText={setBuyerName}
             editable={!loading}
@@ -142,6 +146,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Municipality"
+            placeholderTextColor="#666"
             value={municipality}
             onChangeText={setMunicipality}
             editable={!loading}
@@ -150,6 +155,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Ward Number"
+            placeholderTextColor="#666"
             value={buyerWard}
             onChangeText={setBuyerWard}
             keyboardType="number-pad"
@@ -166,6 +172,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Full Name"
+            placeholderTextColor="#666"
             value={sellerName}
             onChangeText={setSellerName}
             editable={!loading}
@@ -174,6 +181,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Shop Name"
+            placeholderTextColor="#666"
             value={shopName}
             onChangeText={setShopName}
             editable={!loading}
@@ -182,6 +190,7 @@ const SignupScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Ward Number"
+            placeholderTextColor="#666"
             value={sellerWard}
             onChangeText={setSellerWard}
             keyboardType="number-pad"
@@ -269,6 +278,8 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
     backgroundColor: '#f9f9f9',
+    fontSize: 16,
+    color: '#333',
   },
   errorBox: {
     backgroundColor: '#ffebee',

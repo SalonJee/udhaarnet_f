@@ -335,7 +335,8 @@ const seedData = () => {
           sellerId: sellerUsers[0].id,
           amount: 159.98,
           description: 'Wireless Headphones - 2 units',
-          status: 'verified',
+          status: 'active',
+          buyerApproved: 1,
           dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
           paymentMethod: null,
           paymentReference: null,
@@ -348,6 +349,7 @@ const seedData = () => {
           amount: 45.99,
           description: 'Summer Dress',
           status: 'paid',
+          buyerApproved: 1,
           dueDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
           paidDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
           paymentMethod: 'eSewa',
@@ -361,6 +363,7 @@ const seedData = () => {
           amount: 89.99,
           description: 'Running Shoes',
           status: 'late',
+          buyerApproved: 1,
           dueDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
           paymentMethod: null,
           paymentReference: null,
@@ -373,16 +376,17 @@ const seedData = () => {
           amount: 105.98,
           description: 'Denim Jeans + T-shirt',
           status: 'pending',
+          buyerApproved: 0,
           dueDate: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
           paymentMethod: null,
           paymentReference: null,
-          notes: 'Awaiting seller verification',
+          notes: 'Awaiting buyer approval',
         },
       ];
 
       sampleCredits.forEach((credit) => {
         db.run(
-          'INSERT INTO credits (id, buyerId, sellerId, amount, description, status, dueDate, paidDate, paymentMethod, paymentReference, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO credits (id, buyerId, sellerId, amount, description, status, buyerApproved, dueDate, paidDate, paymentMethod, paymentReference, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             credit.id,
             credit.buyerId,
@@ -390,6 +394,7 @@ const seedData = () => {
             credit.amount,
             credit.description,
             credit.status,
+            credit.buyerApproved || 0,
             credit.dueDate,
             credit.paidDate,
             credit.paymentMethod,
