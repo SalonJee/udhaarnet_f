@@ -30,7 +30,7 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       await login(phoneNumber, password);
-      navigation.navigate('Home');
+      // No need to navigate - AuthContext will automatically switch to authenticated stack
     } catch (err) {
       Alert.alert('Login Failed', err.message || 'Something went wrong');
     }
@@ -119,16 +119,7 @@ const LoginScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Optional: update/remove test credentials */}
-        <View style={styles.credentialsContainer}>
-          <Text style={styles.credentialsTitle}>Test Credentials:</Text>
-          <Text style={styles.credentialsText}>
-            Buyer: 98XXXXXXXX / buyer123
-          </Text>
-          <Text style={styles.credentialsText}>
-            Seller: 97XXXXXXXX / seller123
-          </Text>
-        </View>
+        
       </View>
     </KeyboardAvoidingView>
   );

@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Platform,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { calculateCreditScore, formatCreditScore, getRiskLevel } from '../utils/creditScore';
 
-const API_URL = 'http://10.209.203.203:3000/api';
+const API_URL = 'http://192.168.10.102:3000/api';
 
 const SellerHomeScreen = ({ navigation }) => {
   const { user, logout, token } = useAuth();
@@ -137,8 +137,20 @@ const SellerHomeScreen = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    logout();
-    navigation.navigate('RoleSelection');
+    Alert.alert(
+      'Logout',
+      'Do you want to log out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel'
+        },
+        {
+          text: 'Yes',
+          onPress: () => logout()
+        }
+      ]
+    );
   };
 
   const openPaymentModal = (transaction) => {
@@ -448,7 +460,7 @@ const SellerHomeScreen = ({ navigation }) => {
     <ScrollView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerLeft}>
           <Text style={styles.greeting}>Welcome, {user?.profile?.name || 'Seller'}!</Text>
           <Text style={styles.shopName}>🏪 {user?.profile?.shopName || 'Shop'}</Text>
         </View>
@@ -915,15 +927,19 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FF9500',
-    paddingHorizontal: 20,
+    paddingHorizontal: 15,
     paddingVertical: 20,
     paddingTop: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
   greeting: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -933,15 +949,15 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   logoutButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 15,
+    backgroundColor: '#ff3b30',
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 6,
   },
   logoutText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
   statsGrid: {
     paddingHorizontal: 15,

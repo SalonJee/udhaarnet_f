@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacit
 import { useAuth } from '../context/AuthContext';
 import { calculateCreditScore, getRiskLevel } from '../utils/creditScore';
 
-const API_URL = 'http://10.209.203.203:3000/api';
+const API_URL = 'http://192.168.10.102:3000/api';
 
 const BuyerHomeScreen = ({ navigation }) => {
   const { user, logout, token } = useAuth();
@@ -29,8 +29,8 @@ const BuyerHomeScreen = ({ navigation }) => {
       await Promise.all([fetchCredits(), fetchCreditSummary(), fetchPendingRequests()]);
       setError(null);
     } catch (err) {
-      setError(err.message);
-      Alert.alert('Error', 'Failed to fetch data: ' + err.message);
+      setError('Unable to connect to server');
+      console.warn('Network error. Please ensure backend server is running on http://192.168.10.102:3000');
     } finally {
       setLoading(false);
     }
@@ -46,7 +46,7 @@ const BuyerHomeScreen = ({ navigation }) => {
         setCredits(data);
       }
     } catch (err) {
-      console.error('Credits fetch error:', err);
+      console.warn('Unable to fetch credits. Please ensure backend is running.');
     }
   };
 
@@ -60,7 +60,7 @@ const BuyerHomeScreen = ({ navigation }) => {
         setCreditSummary(data);
       }
     } catch (err) {
-      console.error('Summary fetch error:', err);
+      console.warn('Unable to fetch credit summary. Please ensure backend is running.');
     }
   };
 
@@ -80,7 +80,8 @@ const BuyerHomeScreen = ({ navigation }) => {
         }
       }
     } catch (err) {
-      console.error('Pending requests fetch error:', err);
+      // Silently handle network errors to prevent app crashes
+      console.warn('Unable to fetch pending requests. Please ensure backend is running.');
     }
   };
 
@@ -147,31 +148,43 @@ const BuyerHomeScreen = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    logout();
-    navigation.navigate('RoleSelection');
+    Alert.alert(
+      'Logout',
+      'Do you want to log out?',
+      [
+        {
+          text: 'No',
+          style: 'cancel'
+        },
+        {
+          text: 'Yes',
+          onPress: () => logout()
+        }
+      ]
+    );
   };
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome, Buyer!</Text>
-          <Text style={styles.email}>{user?.email}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.greeting}>Welcome, {user?.name || user?.profile?.name || 'Buyer'}!</Text>
+          <Text style={styles.phoneNumber}>{user?.phoneNumber}</Text>
         </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity 
-            style={styles.notificationButton} 
+            style={styles.iconButton} 
             onPress={() => setShowNotifications(!showNotifications)}
           >
-            <Text style={styles.notificationIcon}>🔔</Text>
+            <Text style={styles.icon}>🔔</Text>
             {pendingRequests.length > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>{pendingRequests.length}</Text>
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
+          <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
+            <Text style={styles.icon}>⏻</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -346,37 +359,44 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    paddingTop: 30,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    paddingTop: 40,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerLeft: {
+    flex: 1,
+    marginRight: 15,
+  },
   greeting: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
   },
-  email: {
-    fontSize: 14,
+  phoneNumber: {
+    fontSize: 12,
     color: '#e0e0e0',
-    marginTop: 5,
+    marginTop: 3,
   },
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  notificationButton: {
+  iconButton: {
     position: 'relative',
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  notificationIcon: {
-    fontSize: 20,
+  icon: {
+    fontSize: 22,
+    color: '#fff',
   },
   notificationBadge: {
     position: 'absolute',
@@ -495,17 +515,6 @@ const styles = StyleSheet.create({
   notificationButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  logoutText: {
-    color: '#fff',
-    fontSize: 12,
     fontWeight: '600',
   },
   section: {

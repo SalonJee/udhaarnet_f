@@ -79,7 +79,7 @@ const SignupScreen = ({ navigation }) => {
         `${userRole === 'buyer' ? 'Buyer' : 'Seller'} account created successfully`
       );
 
-      navigation.replace('Home');
+      // No need to navigate - AuthContext will automatically switch to authenticated stack
     } catch (err) {
       Alert.alert('Signup Failed', err.message || 'Something went wrong');
     }

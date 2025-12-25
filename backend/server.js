@@ -31,7 +31,7 @@ app.get('/health', (req, res) => {
 initializeDatabase()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`Servers are running on http://10.209.203.203:${PORT}`);
+      console.log(`Servers are running on http://192.168.10.102:${PORT}`);
       console.log(`Database initialized at marketplace.db`);
     });
   })

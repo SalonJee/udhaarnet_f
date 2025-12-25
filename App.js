@@ -5,6 +5,7 @@ import BuyerHomeScreen from './frontend/screens/BuyerHomeScreen';
 import LoginScreen from './frontend/screens/LoginScreen';
 import RoleSelectionScreen from './frontend/screens/RoleSelectionScreen';
 import SellerHomeScreen from './frontend/screens/SellerHomeScreen';
+import SignupScreen from './frontend/screens/SignupScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -28,6 +29,14 @@ function AppNavigator() {
             <Stack.Screen
               name="Login"
               component={LoginScreen}
+              options={{
+                animationEnabled: true,
+                cardStyle: { backgroundColor: '#f5f5f5' },
+              }}
+            />
+            <Stack.Screen
+              name="Signup"
+              component={SignupScreen}
               options={{
                 animationEnabled: true,
                 cardStyle: { backgroundColor: '#f5f5f5' },
